@@ -255,12 +255,12 @@
                             <button onClick={onClose} className="text-gray-500 p-2">✕</button>
                         </div>
                         <form onSubmit={handleSubmit} className="space-y-4">
-                            <div><label className="block text-xs text-gray-500 mb-1">活動名稱</label><input required className="w-full p-2 border rounded" value={title} onChange={e => setTitle(e.target.value)} placeholder="例：實驗室聚餐" /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">活動名稱</label><input required className="w-full p-2 border rounded" value={title} onChange={e => setTitle(e.target.value)} placeholder="例：MOPM 多體學與精準醫學聯合會議" /></div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div><label className="block text-xs text-gray-500 mb-1">日期</label><input type="date" required className="w-full p-2 border rounded" value={date} onChange={e => setDate(e.target.value)} /></div>
                                 <div><label className="block text-xs text-gray-500 mb-1">時間</label><input type="time" required className="w-full p-2 border rounded" value={time} onChange={e => setTime(e.target.value)} /></div>
                             </div>
-                            <div><label className="block text-xs text-gray-500 mb-1">地點 / 備註</label><input className="w-full p-2 border rounded" value={location} onChange={e => setLocation(e.target.value)} placeholder="例：學校餐廳" /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">地點 / 備註</label><input className="w-full p-2 border rounded" value={location} onChange={e => setLocation(e.target.value)} placeholder="" /></div>
                             <div className="flex gap-3 pt-2">
                                 {initialData && <button type="button" onClick={handleDelete} className="py-3 px-4 text-red-500 font-medium border border-red-200 rounded-lg hover:bg-red-50 transition">刪除</button>}
                                 <button type="submit" className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition">{initialData ? '更新' : '新增'}</button>
@@ -489,7 +489,7 @@
                                     <div>
                                         <label className="text-xs text-gray-500 block mb-1">星期</label>
                                         <select value={localSettings.dayOfWeek} onChange={(e) => handleChange('dayOfWeek', e.target.value === 'auto' ? 'auto' : parseInt(e.target.value))} className="w-full p-2 border rounded text-sm">
-                                            <option value="auto">自動偵測 (依雲端)</option>
+                                            <option value="auto">自動偵測</option>
                                             <option value={1}>星期一</option>
                                             <option value={2}>星期二</option>
                                             <option value={3}>星期三</option>
@@ -500,7 +500,7 @@
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="text-xs text-gray-500 block mb-1">時間</label>
+                                        <label className="text-xs text-gray-500 block mb-1">時間（手動）</label>
                                         <input type="time" value={localSettings.time} onChange={(e) => handleChange('time', e.target.value)} className="w-full p-2 border rounded text-sm"/>
                                     </div>
                                 </div>
@@ -514,7 +514,7 @@
                                         </span>
                                         <button className="w-8 h-8 bg-gray-200 rounded flex items-center justify-center text-gray-600 hover:bg-gray-300 transition" onClick={() => handleChange('weekOffset', localSettings.weekOffset + 1)}>+</button>
                                     </div>
-                                    <p className="text-[10px] text-gray-400 mt-2 leading-tight">若會議被上個月佔用，可點擊「+」讓日期順延一週。</p>
+                                    <p className="text-[10px] text-gray-400 mt-2 leading-tight">若受月份週次影響而有誤差，可點擊「+/-」微調校正。</p>
                                 </div>
                             </div>
                             <button onClick={() => { onClearCache(); onClose(); }} className="w-full py-3 text-red-500 text-sm font-medium border border-red-200 rounded-lg hover:bg-red-50">清除快取並重整</button>
@@ -531,6 +531,7 @@
             const [apiConfig, setApiConfig] = useState({ meeting_day: 4 });
             const [isOnboarded, setIsOnboarded] = useState(false);
             const [rawData, setRawData] = useState(null);
+            const [apiValidated, setApiValidated] = useState(false); // 新增狀態：API是否驗證通過
             const [loading, setLoading] = useState({ status: 'idle', msg: '' });
             const [filterLimit, setFilterLimit] = useState(3);
             const [showSettings, setShowSettings] = useState(false);
@@ -555,7 +556,10 @@
                 const savedOverrides = localStorage.getItem(CACHE_KEY_OVERRIDES);
 
                 if (savedSettings) { setSettings(JSON.parse(savedSettings)); setIsOnboarded(true); }
-                if (savedData) { setRawData(JSON.parse(savedData)); }
+                if (savedData) { 
+                    setRawData(JSON.parse(savedData)); 
+                    setApiValidated(true); // 如果有快取代表之前驗證過
+                }
                 if (savedEvents) { setCustomEvents(JSON.parse(savedEvents)); }
                 if (savedFilter) { setFilterLimit(savedFilter === 'all' ? 'all' : parseInt(savedFilter)); }
                 if (savedApiConfig) { setApiConfig(JSON.parse(savedApiConfig)); }
@@ -573,6 +577,7 @@
                     if (json.status === 'success') {
                         setRawData(json.data);
                         setApiConfig({ meeting_day: json.meeting_day || 4 });
+                        setApiValidated(true); // API 驗證成功
                         localStorage.setItem(CACHE_KEY_DATA, JSON.stringify(json.data));
                         localStorage.setItem('lab_meeting_api_config', JSON.stringify({ meeting_day: json.meeting_day || 4 }));
                         setLoading({ status: 'idle', msg: '' });
@@ -617,25 +622,30 @@
                 const nextWeekEnd = new Date(currentWeekEnd);
                 nextWeekEnd.setDate(currentWeekEnd.getDate() + 7);
 
+                const tomorrow = new Date(now);
+                tomorrow.setDate(now.getDate() + 1);
+
+                const isToday = (d) => d.toDateString() === now.toDateString();
+                const isTomorrow = (d) => d.toDateString() === tomorrow.toDateString();
+                const isInWeek = (d) => d >= currentWeekStart && d < currentWeekEnd;
+
                 if (nextIndex !== -1) {
                     const nextMeeting = allMeetings[nextIndex];
                     const prevMeeting = nextIndex > 0 ? allMeetings[nextIndex - 1] : null;
                     const nextNextMeeting = allMeetings[nextIndex + 1];
-
-                    const isToday = (d) => d.toDateString() === now.toDateString();
-                    const isInWeek = (d) => d >= currentWeekStart && d < currentWeekEnd;
 
                     if (prevMeeting && isInWeek(prevMeeting.dateObj) && !isToday(prevMeeting.dateObj) && prevMeeting.dateObj < now) {
                         itemsToShow.push({ ...prevMeeting, statusLabel: "本週 (已結束)", displayType: 'secondary' });
                     }
 
                     let nextLabel = "下週 / 下次";
-                    if (isToday(nextMeeting.dateObj)) nextLabel = "今天";
+                    if (isToday(nextMeeting.dateObj)) nextLabel = "今天‼️";
+                    else if (isTomorrow(nextMeeting.dateObj)) nextLabel = "明天⚠️";
                     else if (isInWeek(nextMeeting.dateObj)) nextLabel = "本週";
                     
                     itemsToShow.push({ ...nextMeeting, statusLabel: nextLabel, displayType: 'hero' });
 
-                    if (!(prevMeeting && isInWeek(prevMeeting.dateObj) && !isInWeek(nextMeeting.dateObj) && !isToday(nextMeeting.dateObj))) {
+                    if (!(prevMeeting && isInWeek(prevMeeting.dateObj) && !isInWeek(nextMeeting.dateObj) && !isToday(nextMeeting.dateObj) && !isTomorrow(nextMeeting.dateObj))) {
                         if (nextNextMeeting) {
                             itemsToShow.push({ ...nextNextMeeting, statusLabel: "之後", displayType: 'secondary' });
                         }
@@ -652,9 +662,7 @@
                         return endOfDay.getTime() > now.getTime() && endOfDay.getTime() < nextWeekEnd.getTime();
                     })
                     .map(e => {
-                        const isEventToday = now.toDateString() === e.dateObj.toDateString();
-                        const isEventInWeek = e.dateObj >= currentWeekStart && e.dateObj < currentWeekEnd;
-                        e.statusLabel = isEventToday ? "今天活動" : (isEventInWeek ? "本週活動" : "下週活動");
+                        e.statusLabel = isToday(e.dateObj) ? "今天活動" : (isTomorrow(e.dateObj) ? "明天活動" : (isInWeek(e.dateObj) ? "本週活動" : "下週活動"));
                         e.displayType = 'event';
                         return e;
                     });
@@ -750,15 +758,17 @@
 
             return (
                 <div className="min-h-screen pb-24 safe-pb relative">
-                    <header className="bg-white px-4 py-3 sticky top-0 z-50 shadow-sm flex justify-between items-center overflow-hidden">
-                        <div className="flex items-center gap-3 min-w-0">
-                            {/* Logo 在所有螢幕都會顯示，並且再稍微放大 */}
-                            <img src="assets/CSBM_logo.png" alt="CSBM Logo" className="h-10 sm:h-11 w-auto object-contain flex-shrink-0" />
-                            {/* 標題在手機螢幕 (sm 以下) 會自動隱藏，把空間讓給 Logo */}
+                    {/* Header 調整：縮小 padding，放大 Logo，加入網址連結 */}
+                    <header className="bg-white px-4 py-1.5 sm:py-2 sticky top-0 z-50 shadow-sm flex justify-between items-center overflow-hidden">
+                        <a href="https://sung-huan.github.io/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 min-w-0 hover:opacity-80 transition">
+                            <img src="assets/CSBM_logo.png" alt="CSBM Logo" className="h-12 sm:h-14 w-auto object-contain flex-shrink-0 py-0.5" />
                             <h1 className="hidden sm:block text-xl font-extrabold text-slate-800 tracking-tight whitespace-nowrap truncate">Meeting Rotation</h1>
-                        </div>
-                        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-                            <a href={GOOGLE_SHEET_URL} target="_blank" className="p-2 rounded-full text-green-600 hover:bg-green-50 transition">{SVGIcons.Sheet}</a>
+                        </a>
+                        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+                            {/* 首次 API 驗證通過才顯示 Google Sheet 按鈕 */}
+                            {apiValidated && (
+                                <a href={GOOGLE_SHEET_URL} target="_blank" className="p-2 rounded-full text-green-600 hover:bg-green-50 transition">{SVGIcons.Sheet}</a>
+                            )}
                             <button onClick={() => fetchData()} disabled={loading.status === 'fetching'} className={`p-2 rounded-full text-gray-600 hover:bg-gray-100 transition ${loading.status === 'fetching' ? 'loader-spin text-blue-500' : ''}`}>{SVGIcons.Refresh}</button>
                             <button onClick={() => setShowSettings(true)} className="p-2 rounded-full text-gray-600 hover:bg-gray-100 transition">{SVGIcons.Settings}</button>
                         </div>
@@ -856,7 +866,7 @@
                                 {Object.keys(groupedData).length > 0 ? (
                                     Object.entries(groupedData).map(([month, group]) => (
                                         <div key={month}>
-                                            <div className="sticky top-[64px] sm:top-[72px] bg-[#f3f4f6] py-2 z-30 flex justify-between items-center border-l-2 border-gray-300 pl-2">
+                                            <div className="sticky top-[56px] sm:top-[64px] bg-[#f3f4f6] py-2 z-30 flex justify-between items-center border-l-2 border-gray-300 pl-2">
                                                 <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">
                                                     {month}
                                                 </h3>
@@ -889,14 +899,14 @@
                                 ) : (<div className="p-8 text-center text-gray-400">尚無資料</div>)}
                             </div>
                             <div className="mt-8 text-center pb-8">
-                                <p className="text-xs text-gray-400">註：*代表系統根據規則自動推測會議內容，可能與實際排程有誤。<br/><br/>Developed by Angus © CSBM Lab 2026</p>
+                                <p className="text-xs text-gray-400">*註：星號項目為系統根據規則自動推測，請留意是否有誤。<br/><br/>Developed by Angus © 2026 CSBM Lab</p>
                             </div>
                         </section>
                     </main>
                     <button onClick={openAddModal} className="fixed bottom-6 right-6 bg-blue-600 text-white p-4 rounded-full fab-shadow hover:bg-blue-700 active:scale-95 transition z-40">{SVGIcons.Plus}</button>
                     
                     {/* Modals */}
-                    <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} settings={settings} onSave={(s)=>{setSettings(s); localStorage.setItem(CACHE_KEY_SETTINGS, JSON.stringify(s));}} onClearCache={()=>{localStorage.removeItem(CACHE_KEY_DATA); localStorage.removeItem(CACHE_KEY_OVERRIDES); setRawData(null); setMeetingOverrides({}); fetchData();}} />
+                    <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} settings={settings} onSave={(s)=>{setSettings(s); localStorage.setItem(CACHE_KEY_SETTINGS, JSON.stringify(s));}} onClearCache={()=>{localStorage.removeItem(CACHE_KEY_DATA); localStorage.removeItem(CACHE_KEY_OVERRIDES); setRawData(null); setMeetingOverrides({}); setApiValidated(false); fetchData();}} />
                     <EventModal isOpen={eventModalOpen} onClose={() => setEventModalOpen(false)} onSave={handleSaveEvent} onDelete={handleDeleteEvent} initialData={editingItem} />
                     <MeetingEditModal isOpen={meetingModalOpen} onClose={() => setMeetingModalOpen(false)} onSave={handleSaveMeetingOverride} onReset={handleResetMeetingOverride} initialData={editingItem} />
                 </div>
