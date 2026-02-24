@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Meeting Rotation | CSBM Lab</title>
+    
+    <!-- PWA Settings -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="theme-color" content="#ffffff">
+    <link rel="apple-touch-icon" href="./assets/CSBM_icon_512.png">
+    <link rel="icon" type="image/png" href="./assets/CSBM_icon_192.png">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; }
+        .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        .loader-spin { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        /* IOS Safe Area */
+        .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+        .animate-slide-up { animation: slideUp 0.3s ease-out; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .fab-shadow { box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Hero Card Breathing (Blue Theme) - 僅陰影閃爍，邊框不閃 */
+        @keyframes breathe-blue {
+            0% { box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.1); }
+            50% { box-shadow: 0 0 15px 4px rgba(59, 130, 246, 0.3); }
+            100% { box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.1); }
+        }
+        .glow-hero {
+            animation: breathe-blue 3s infinite ease-in-out;
+        }
+
+        /* List Item Breathing (Blue Theme) - 僅陰影閃爍，邊框不閃 */
+        @keyframes breathe-blue-list {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.1); }
+            50% { box-shadow: 0 0 12px 2px rgba(59, 130, 246, 0.3); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.1); }
+        }
+        .glow-list-item { 
+            animation: breathe-blue-list 2.5s infinite ease-in-out; 
+            background-color: #eff6ff; /* blue-50 */
+            position: relative; /* Ensure z-index works properly with parents */
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- Utils & Config ---
+        const CACHE_KEY_DATA = 'lab_meeting_data';
+        const CACHE_KEY_SETTINGS = 'lab_meeting_settings';
+        const CACHE_KEY_CUSTOM_EVENTS = 'lab_meeting_custom_events';
+        const CACHE_KEY_FILTER = 'lab_meeting_filter_limit';
+        const CACHE_KEY_OVERRIDES = 'lab_meeting_overrides'; 
+        const GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1LAnyNjDdyMuk0qpRo88s2fV3HFFWZJga2WfJFvAMwAs/edit?usp=drivesdk";
+
+        const SVGIcons = {
+            Settings: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
+            Refresh: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>,
+            Plus: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+            Trash: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
+            Sheet: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
+            More: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/><circle cx="5" cy="12" r="1.5"/></svg>,
+            User: <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+            Video: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>,
+            Folder: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>,
+            Edit: <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        };
+
+        // --- Logic: Date & Parsing ---
+
+        const getMeetingDate = (yearMonthStr, weekIndex, settings, apiConfig) => {
+            const [year, month] = yearMonthStr.split('_').map(Number);
+            const { dayOfWeek, time, weekOffset } = settings;
+            
+            const apiDay = apiConfig?.meeting_day || 4;
+            const targetDay = dayOfWeek === 'auto' ? apiDay : parseInt(dayOfWeek);
+            const jsTargetDay = targetDay === 7 ? 0 : targetDay;
+
+            let date = new Date(year, month - 1, 1);
+            while (date.getDay() !== jsTargetDay) {
+                date.setDate(date.getDate() + 1);
+            }
+            const totalWeeksToAdd = weekIndex + (weekOffset || 0);
+            date.setDate(date.getDate() + (totalWeeksToAdd * 7));
+            const [hours, minutes] = (time || '14:00').split(':').map(Number);
+            date.setHours(hours, minutes, 0, 0);
+            return date;
+        };
+
+        const preParseSpeaker = (rawStr) => {
+            if (!rawStr) return { speaker: "", topic: "", isSpecial: false, raw: "", hasBracket: false };
+            const cleanStr = rawStr.trim();
+            const hasEmoji = /(\p{Emoji_Presentation}|\p{Extended_Pictographic})/u.test(cleanStr);
+            const hasChinese = /[\u4e00-\u9fa5]/.test(cleanStr);
+            
+            if (hasEmoji || !hasChinese) {
+                return { speaker: "", topic: cleanStr, isSpecial: true, raw: cleanStr, hasBracket: false };
+            }
+
+            const match = cleanStr.match(/^(.*?)\s*[（(](.*)[）)]$/);
+            if (match) {
+                return { speaker: match[1].trim(), topic: match[2].trim(), isSpecial: false, raw: cleanStr, hasBracket: true };
+            }
+            return { speaker: cleanStr, topic: "", isSpecial: false, raw: cleanStr, hasBracket: false };
+        };
+
+        const processMonthData = (monthData, settings, apiConfig, overrides) => {
+            const { year_month, week_schedule, journal_admin } = monthData;
+            
+            let weeks = week_schedule.map((raw, idx) => {
+                if (!raw) return null;
+                const id = `${year_month}-${idx}`;
+                const parsed = preParseSpeaker(raw);
+                let dateObj = getMeetingDate(year_month, idx, settings, apiConfig);
+                let isEdited = false;
+
+                if (overrides[id]) {
+                    const ov = overrides[id];
+                    parsed.speaker = ov.speaker;
+                    parsed.topic = ov.topic;
+                    if (ov.date && ov.time) {
+                        dateObj = new Date(`${ov.date}T${ov.time}`);
+                    }
+                    isEdited = true;
+                    parsed.isSpecial = false; 
+                }
+
+                return { ...parsed, type: 'meeting', id, year_month, weekIndex: idx, dateObj, inferred: false, isEdited };
+            }).filter(Boolean);
+
+            const journalIndices = new Set();
+            const adminNames = (journal_admin || "").split(/[,、\s]+/).filter(Boolean);
+            
+            adminNames.forEach(name => {
+                let lastIdx = -1;
+                weeks.forEach(week => {
+                    if (!week.isSpecial && week.speaker.includes(name)) { lastIdx = week.weekIndex; }
+                });
+                if (lastIdx !== -1) journalIndices.add(lastIdx);
+            });
+
+            const hasExplicitJournal = weeks.some(w => w.hasBracket && /journal/i.test(w.topic));
+            const hasAdminMatch = journalIndices.size > 0;
+
+            if (!hasExplicitJournal && !hasAdminMatch) {
+                const week4 = weeks.find(w => w.weekIndex === 3);
+                if (week4 && !week4.isSpecial) journalIndices.add(3);
+            }
+
+            return weeks.map(week => {
+                const isUser = week.speaker.includes(settings.name);
+                if (week.isSpecial) return { ...week, isUser: false };
+                if (week.isEdited) return { ...week, inferred: false, isUser };
+                if (week.hasBracket) return { ...week, isUser };
+
+                if (journalIndices.has(week.weekIndex)) {
+                    return { ...week, topic: "Journal", inferred: true, isUser };
+                } else {
+                    return { ...week, topic: "Progress", inferred: true, isUser };
+                }
+            });
+        };
+
+        // --- Component: Onboarding ---
+        const Onboarding = ({ onComplete }) => {
+            const [name, setName] = useState("");
+            const [apiKey, setApiKey] = useState("");
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (name && apiKey) onComplete({ name, apiKey });
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col justify-center items-center p-6 bg-white">
+                    <div className="w-full max-w-md">
+                        <div className="text-center mb-8">
+                            <img src="assets/CSBM_logo.png" alt="CSBM Logo" className="h-16 md:h-20 w-auto object-contain mx-auto mb-6" />
+                            <h1 className="text-2xl font-bold text-gray-800 mb-2">歡迎使用 CSBM Lab</h1>
+                            <p className="text-gray-500">初次使用，請輸入您的資訊以進行個人化設定。</p>
+                        </div>
+                        
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">您的名字（須與雲端表格一致）</label>
+                                <input type="text" required className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="例如：桓哥" value={name} onChange={(e) => setName(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                                <input type="text" required className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="才不要告訴你 :P" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+                            </div>
+                            <button type="submit" className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 transition">開始使用</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Component: Event Modal (For Custom Events) ---
+        const EventModal = ({ isOpen, onClose, onSave, onDelete, initialData }) => {
+            if (!isOpen) return null;
+            const [title, setTitle] = useState("");
+            const [date, setDate] = useState("");
+            const [time, setTime] = useState("12:00");
+            const [location, setLocation] = useState("");
+
+            useEffect(() => {
+                if (isOpen && initialData) {
+                    setTitle(initialData.title || "");
+                    setDate(initialData.date || "");
+                    setTime(initialData.time || "12:00");
+                    setLocation(initialData.subtext || "");
+                } else if (isOpen) {
+                    const today = new Date().toISOString().split('T')[0];
+                    setTitle(""); setDate(today); setTime("12:00"); setLocation("");
+                }
+            }, [isOpen, initialData]);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSave({ id: initialData ? initialData.id : Date.now().toString(), title, date, time, subtext: location, type: 'custom' });
+                onClose();
+            };
+
+            const handleDelete = () => { if(confirm("確定刪除此活動？")) { onDelete(initialData.id); onClose(); } };
+
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex justify-center items-end sm:items-center">
+                    <div className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl p-6 shadow-xl animate-slide-up">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold">{initialData ? '編輯活動' : '新增活動'}</h2>
+                            <button onClick={onClose} className="text-gray-500 p-2">✕</button>
+                        </div>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div><label className="block text-xs text-gray-500 mb-1">活動名稱</label><input required className="w-full p-2 border rounded" value={title} onChange={e => setTitle(e.target.value)} placeholder="例：實驗室聚餐" /></div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="block text-xs text-gray-500 mb-1">日期</label><input type="date" required className="w-full p-2 border rounded" value={date} onChange={e => setDate(e.target.value)} /></div>
+                                <div><label className="block text-xs text-gray-500 mb-1">時間</label><input type="time" required className="w-full p-2 border rounded" value={time} onChange={e => setTime(e.target.value)} /></div>
+                            </div>
+                            <div><label className="block text-xs text-gray-500 mb-1">地點 / 備註</label><input className="w-full p-2 border rounded" value={location} onChange={e => setLocation(e.target.value)} placeholder="例：學校餐廳" /></div>
+                            <div className="flex gap-3 pt-2">
+                                {initialData && <button type="button" onClick={handleDelete} className="py-3 px-4 text-red-500 font-medium border border-red-200 rounded-lg hover:bg-red-50 transition">刪除</button>}
+                                <button type="submit" className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition">{initialData ? '更新' : '新增'}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Component: Meeting Edit Modal (For Overrides) ---
+        const MeetingEditModal = ({ isOpen, onClose, onSave, onReset, initialData }) => {
+            if (!isOpen || !initialData) return null;
+            const [speaker, setSpeaker] = useState("");
+            const [topic, setTopic] = useState("");
+            const [date, setDate] = useState("");
+            const [time, setTime] = useState("");
+
+            useEffect(() => {
+                if (isOpen && initialData) {
+                    setSpeaker(initialData.speaker || "");
+                    setTopic(initialData.topic || "");
+                    const d = initialData.dateObj;
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    setDate(`${y}-${m}-${day}`);
+                    setTime(d.toTimeString().substring(0, 5));
+                }
+            }, [isOpen, initialData]);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSave(initialData.id, { speaker, topic, date, time });
+                onClose();
+            };
+
+            const handleReset = () => {
+                if(confirm("確定要清除自訂修改，恢復原始課表設定嗎？")) {
+                    onReset(initialData.id);
+                    onClose();
+                }
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex justify-center items-end sm:items-center">
+                    <div className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl p-6 shadow-xl animate-slide-up">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold flex items-center gap-2">
+                                編輯 Meeting
+                                {initialData.isEdited && <span className="bg-blue-100 text-blue-600 text-[10px] px-2 py-0.5 rounded uppercase tracking-wide">已編輯</span>}
+                            </h2>
+                            <button onClick={onClose} className="text-gray-500 p-2">✕</button>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-4">此處的變更僅會儲存在您的設備上，用於應對臨時的調度。</p>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="block text-xs text-gray-500 mb-1">報告日期</label><input type="date" required className="w-full p-2 border rounded" value={date} onChange={e => setDate(e.target.value)} /></div>
+                                <div><label className="block text-xs text-gray-500 mb-1">報告時間</label><input type="time" required className="w-full p-2 border rounded" value={time} onChange={e => setTime(e.target.value)} /></div>
+                            </div>
+                            <div><label className="block text-xs text-gray-500 mb-1">報告人</label><input className="w-full p-2 border rounded" value={speaker} onChange={e => setSpeaker(e.target.value)} /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">報告主題</label><input className="w-full p-2 border rounded" value={topic} onChange={e => setTopic(e.target.value)} /></div>
+                            
+                            <div className="flex gap-3 pt-2">
+                                {initialData.isEdited && <button type="button" onClick={handleReset} className="py-3 px-4 text-red-500 font-medium border border-red-200 rounded-lg hover:bg-red-50 transition">恢復預設</button>}
+                                <button type="submit" className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition">儲存變更</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Component: Custom Event Display Card (Dashboard) ---
+        const UpcomingEventCard = ({ event }) => (
+            <div className="opacity-95 scale-[0.98] origin-top relative z-10">
+                <div className="p-4 rounded-xl bg-purple-50 text-purple-900 border border-purple-100 card-shadow">
+                    <div className="flex justify-between items-start">
+                        <span className="text-xs uppercase font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded-md">{event.statusLabel}</span>
+                        <div className="text-right flex flex-col items-end">
+                            <span className="text-xs text-purple-600 font-medium mb-0.5">
+                                {event.dateObj.toLocaleDateString('zh-TW', {month:'numeric', day:'numeric', weekday:'short'})}
+                            </span>
+                            <div className="text-xs font-bold font-mono text-purple-500">
+                                {event.dateObj.toLocaleTimeString('zh-TW', {hour: '2-digit', minute: '2-digit', hour12: true})}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="font-bold mt-1.5 text-purple-800">{event.title}</div>
+                    {event.subtext && <div className="text-xs text-purple-600 mt-0.5">{event.subtext}</div>}
+                </div>
+            </div>
+        );
+
+        // --- Component: List Row ---
+        const ListRow = ({ item, isNext, statusLabel, onEditClick }) => {
+            const dateStr = item.dateObj.getDate();
+            const weekDay = item.dateObj.toLocaleDateString('zh-TW', { weekday: 'short' });
+            
+            const isCustom = item.type === 'custom';
+            const isMeeting = item.type === 'meeting';
+            const isSpecial = item.isSpecial;
+            
+            const now = new Date();
+            const currentYearMonthNum = now.getFullYear() * 100 + now.getMonth() + 1;
+            
+            let itemYearMonthNum;
+            if (isMeeting && item.year_month) {
+                const parts = item.year_month.split('_');
+                itemYearMonthNum = Number(parts[0]) * 100 + Number(parts[1]);
+            } else {
+                itemYearMonthNum = item.dateObj.getFullYear() * 100 + item.dateObj.getMonth() + 1;
+            }
+            
+            const isPastMonth = itemYearMonthNum < currentYearMonthNum;
+            const isClickable = isCustom || (isMeeting && !isPastMonth);
+            
+            let bgClass = 'bg-white';
+            let borderClass = 'border-l-4 border-l-transparent';
+            let titleColor = 'text-gray-800';
+            let subTextColor = 'text-gray-500';
+
+            // 回歸藍色主視覺焦點，邊框維持實色不閃爍
+            const highlightClass = isNext 
+                ? 'glow-list-item border-l-4 border-l-blue-500' 
+                : 'border-b border-gray-100';
+
+            if (isCustom) {
+                borderClass = 'border-l-4 border-l-purple-300';
+                titleColor = 'text-gray-800'; 
+            } else if (item.isUser) {
+                bgClass = 'bg-white';
+                // 自己報告時改回溫和的琥珀色 (Amber)
+                if (!isNext) borderClass = 'border-l-4 border-l-amber-400';
+                titleColor = 'text-amber-700';
+            } else if (isSpecial) {
+                bgClass = 'bg-white';
+                borderClass = 'border-l-4 border-l-transparent';
+                titleColor = 'text-gray-500';
+            }
+
+            return (
+                <div className={`flex items-center p-3 mb-2 rounded-lg ${isNext ? '' : bgClass} ${isNext ? '' : borderClass} ${highlightClass} relative`}>
+                    <div className="flex-shrink-0 w-14 text-center mr-3 flex flex-col justify-center items-center h-full min-h-[44px]">
+                        {isPastMonth && isMeeting ? (
+                            <div className="flex flex-col items-center justify-center opacity-70">
+                                <div className="text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-0.5">WEEK</div>
+                                <div className="text-xl font-bold text-gray-500 leading-none">{item.weekIndex + 1}</div>
+                            </div>
+                        ) : (
+                            <>
+                                {!isCustom && <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Week {item.weekIndex + 1}</div>}
+                                {isCustom && <div className="text-[10px] uppercase tracking-wide text-purple-400 mb-0.5">{item.dateObj.toLocaleTimeString('zh-TW', {hour: '2-digit', minute: '2-digit', hour12: true})}</div>}
+                                <div className="text-xl font-bold text-gray-800 leading-none">{dateStr}</div>
+                                <div className="text-[10px] text-gray-400 mt-1">{weekDay}</div>
+                            </>
+                        )}
+                    </div>
+
+                    <div className="flex-grow overflow-hidden flex flex-col justify-center">
+                        {isCustom ? (
+                            <>
+                                <div className={`font-bold truncate ${titleColor}`}>{item.title}</div>
+                                {item.subtext && <div className={`text-sm truncate ${subTextColor}`}>{item.subtext}</div>}
+                            </>
+                        ) : isSpecial ? (
+                             <div className="font-medium truncate text-gray-500 italic">{item.topic}</div>
+                        ) : (
+                            <>
+                                <div className={`font-bold truncate flex items-center gap-2 ${titleColor}`}>
+                                    {item.speaker || "TBD"}
+                                    {item.isEdited && <span title="已編輯的臨時變動">{SVGIcons.Edit}</span>}
+                                </div>
+                                <div className="text-sm text-gray-500 truncate">
+                                    {item.topic} {item.inferred && "*"}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                    
+                    {isNext && statusLabel && (
+                        <div className="flex items-center pl-2 ml-1 border-l border-blue-200">
+                            <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-1 rounded-full whitespace-nowrap shadow-sm">
+                                {statusLabel}
+                            </span>
+                        </div>
+                    )}
+                    
+                    {/* 獨立編輯按鈕，避免整行誤觸 */}
+                    {isClickable && (
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onEditClick(item); }}
+                            className="p-2 ml-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition active:scale-95"
+                            title="編輯"
+                        >
+                             {SVGIcons.More}
+                        </button>
+                    )}
+                </div>
+            );
+        };
+
+        // --- Component: Settings ---
+        const SettingsModal = ({ isOpen, onClose, settings, onSave, onClearCache }) => {
+            if (!isOpen) return null;
+            const [localSettings, setLocalSettings] = useState(settings);
+            const handleChange = (field, value) => setLocalSettings(prev => ({ ...prev, [field]: value }));
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex justify-center items-end sm:items-center">
+                    <div className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl p-6 shadow-xl animate-slide-up">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold">設定</h2>
+                            <button onClick={onClose} className="text-gray-500 p-2">✕</button>
+                        </div>
+                        <div className="space-y-4 max-h-[70vh] overflow-y-auto pb-4">
+                            <div className="p-4 bg-gray-50 rounded-lg">
+                                <h3 className="text-sm font-semibold text-gray-500 mb-3 uppercase">基本資料</h3>
+                                <div className="space-y-3">
+                                    <div><label className="text-xs text-gray-500 block mb-1">您的名字</label><input value={localSettings.name} onChange={(e) => handleChange('name', e.target.value)} className="w-full p-2 border rounded text-sm"/></div>
+                                    <div><label className="text-xs text-gray-500 block mb-1">API Key</label><input value={localSettings.apiKey} onChange={(e) => handleChange('apiKey', e.target.value)} className="w-full p-2 border rounded text-sm" type="password"/></div>
+                                </div>
+                            </div>
+                            <div className="p-4 bg-gray-50 rounded-lg">
+                                <h3 className="text-sm font-semibold text-gray-500 mb-3 uppercase">會議時間</h3>
+                                <div className="grid grid-cols-2 gap-3 mb-3">
+                                    <div>
+                                        <label className="text-xs text-gray-500 block mb-1">星期</label>
+                                        <select value={localSettings.dayOfWeek} onChange={(e) => handleChange('dayOfWeek', e.target.value === 'auto' ? 'auto' : parseInt(e.target.value))} className="w-full p-2 border rounded text-sm">
+                                            <option value="auto">自動偵測 (依雲端)</option>
+                                            <option value={1}>星期一</option>
+                                            <option value={2}>星期二</option>
+                                            <option value={3}>星期三</option>
+                                            <option value={4}>星期四</option>
+                                            <option value={5}>星期五</option>
+                                            <option value={6}>星期六</option>
+                                            <option value={7}>星期日</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-500 block mb-1">時間</label>
+                                        <input type="time" value={localSettings.time} onChange={(e) => handleChange('time', e.target.value)} className="w-full p-2 border rounded text-sm"/>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-500 block mb-1">週次校正</label>
+                                    <div className="flex items-center gap-3">
+                                        {/* 恢復精緻小巧的 +/- 按鈕與文字 */}
+                                        <button className="w-8 h-8 bg-gray-200 rounded flex items-center justify-center text-gray-600 hover:bg-gray-300 transition" onClick={() => handleChange('weekOffset', localSettings.weekOffset - 1)}>-</button>
+                                        <span className="font-mono text-center w-12 text-sm text-gray-700">
+                                            {localSettings.weekOffset > 0 ? `+${localSettings.weekOffset}` : localSettings.weekOffset} 週
+                                        </span>
+                                        <button className="w-8 h-8 bg-gray-200 rounded flex items-center justify-center text-gray-600 hover:bg-gray-300 transition" onClick={() => handleChange('weekOffset', localSettings.weekOffset + 1)}>+</button>
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 mt-2 leading-tight">若會議被上個月佔用，可點擊「+」讓日期順延一週。</p>
+                                </div>
+                            </div>
+                            <button onClick={() => { onClearCache(); onClose(); }} className="w-full py-3 text-red-500 text-sm font-medium border border-red-200 rounded-lg hover:bg-red-50">清除快取並重整</button>
+                            <button onClick={() => { onSave(localSettings); onClose(); }} className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700">儲存變更</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App ---
+        const App = () => {
+            const [settings, setSettings] = useState({ name: '', apiKey: '', dayOfWeek: 'auto', time: '14:00', weekOffset: 0 });
+            const [apiConfig, setApiConfig] = useState({ meeting_day: 4 });
+            const [isOnboarded, setIsOnboarded] = useState(false);
+            const [rawData, setRawData] = useState(null);
+            const [loading, setLoading] = useState({ status: 'idle', msg: '' });
+            const [filterLimit, setFilterLimit] = useState(3);
+            const [showSettings, setShowSettings] = useState(false);
+            
+            // Modal States
+            const [eventModalOpen, setEventModalOpen] = useState(false);
+            const [meetingModalOpen, setMeetingModalOpen] = useState(false);
+            const [editingItem, setEditingItem] = useState(null);
+            
+            const [parsedData, setParsedData] = useState([]);
+            const [customEvents, setCustomEvents] = useState([]);
+            const [meetingOverrides, setMeetingOverrides] = useState({});
+            
+            const API_URL = "https://script.google.com/macros/s/AKfycbxdbz_9ORj8hb98tUipiuU1-elnjwZta1j8VMKX09XitnWggg3I91LuIojouvWMNUsC/exec";
+
+            useEffect(() => {
+                const savedSettings = localStorage.getItem(CACHE_KEY_SETTINGS);
+                const savedData = localStorage.getItem(CACHE_KEY_DATA);
+                const savedEvents = localStorage.getItem(CACHE_KEY_CUSTOM_EVENTS);
+                const savedFilter = localStorage.getItem(CACHE_KEY_FILTER);
+                const savedApiConfig = localStorage.getItem('lab_meeting_api_config');
+                const savedOverrides = localStorage.getItem(CACHE_KEY_OVERRIDES);
+
+                if (savedSettings) { setSettings(JSON.parse(savedSettings)); setIsOnboarded(true); }
+                if (savedData) { setRawData(JSON.parse(savedData)); }
+                if (savedEvents) { setCustomEvents(JSON.parse(savedEvents)); }
+                if (savedFilter) { setFilterLimit(savedFilter === 'all' ? 'all' : parseInt(savedFilter)); }
+                if (savedApiConfig) { setApiConfig(JSON.parse(savedApiConfig)); }
+                if (savedOverrides) { setMeetingOverrides(JSON.parse(savedOverrides)); }
+            }, []);
+
+            const fetchData = async (forceLimit = null) => {
+                if (!settings.apiKey) return;
+                setLoading({ status: 'fetching', msg: '下載資料中...' });
+                try {
+                    const limit = forceLimit || filterLimit;
+                    const limitParam = limit === 'all' ? '' : `&limit=${limit}`;
+                    const response = await fetch(`${API_URL}?key=${settings.apiKey}${limitParam}`);
+                    const json = await response.json();
+                    if (json.status === 'success') {
+                        setRawData(json.data);
+                        setApiConfig({ meeting_day: json.meeting_day || 4 });
+                        localStorage.setItem(CACHE_KEY_DATA, JSON.stringify(json.data));
+                        localStorage.setItem('lab_meeting_api_config', JSON.stringify({ meeting_day: json.meeting_day || 4 }));
+                        setLoading({ status: 'idle', msg: '' });
+                    } else { 
+                        setLoading({ status: 'error', msg: json.message || 'API 錯誤' }); 
+                        setTimeout(() => setLoading({ status: 'idle', msg: '' }), 5000);
+                    }
+                } catch (e) {
+                    setLoading({ status: 'error', msg: '連線失敗' });
+                    setTimeout(() => setLoading({ status: 'idle', msg: '' }), 3000);
+                }
+            };
+
+            useEffect(() => { if (isOnboarded && settings.apiKey && !rawData) fetchData(); }, [isOnboarded]);
+
+            useEffect(() => {
+                if (!rawData) return;
+                let allMeetings = [];
+                rawData.forEach(monthData => {
+                    const monthMeetings = processMonthData(monthData, settings, apiConfig, meetingOverrides);
+                    allMeetings = [...allMeetings, ...monthMeetings];
+                });
+                setParsedData(allMeetings);
+            }, [rawData, settings, apiConfig, meetingOverrides]);
+
+            const dashboardItems = useMemo(() => {
+                const allMeetings = [...parsedData].sort((a, b) => a.dateObj - b.dateObj);
+                const now = new Date();
+                
+                let nextIndex = allMeetings.findIndex(m => {
+                    const endOfDay = new Date(m.dateObj);
+                    endOfDay.setHours(23, 59, 59, 999);
+                    return endOfDay.getTime() > now.getTime();
+                });
+                
+                const itemsToShow = [];
+                const currentWeekStart = new Date(now);
+                currentWeekStart.setDate(now.getDate() - now.getDay());
+                currentWeekStart.setHours(0,0,0,0);
+                const currentWeekEnd = new Date(currentWeekStart);
+                currentWeekEnd.setDate(currentWeekStart.getDate() + 7);
+                const nextWeekEnd = new Date(currentWeekEnd);
+                nextWeekEnd.setDate(currentWeekEnd.getDate() + 7);
+
+                if (nextIndex !== -1) {
+                    const nextMeeting = allMeetings[nextIndex];
+                    const prevMeeting = nextIndex > 0 ? allMeetings[nextIndex - 1] : null;
+                    const nextNextMeeting = allMeetings[nextIndex + 1];
+
+                    const isToday = (d) => d.toDateString() === now.toDateString();
+                    const isInWeek = (d) => d >= currentWeekStart && d < currentWeekEnd;
+
+                    if (prevMeeting && isInWeek(prevMeeting.dateObj) && !isToday(prevMeeting.dateObj) && prevMeeting.dateObj < now) {
+                        itemsToShow.push({ ...prevMeeting, statusLabel: "本週 (已結束)", displayType: 'secondary' });
+                    }
+
+                    let nextLabel = "下週 / 下次";
+                    if (isToday(nextMeeting.dateObj)) nextLabel = "今天";
+                    else if (isInWeek(nextMeeting.dateObj)) nextLabel = "本週";
+                    
+                    itemsToShow.push({ ...nextMeeting, statusLabel: nextLabel, displayType: 'hero' });
+
+                    if (!(prevMeeting && isInWeek(prevMeeting.dateObj) && !isInWeek(nextMeeting.dateObj) && !isToday(nextMeeting.dateObj))) {
+                        if (nextNextMeeting) {
+                            itemsToShow.push({ ...nextNextMeeting, statusLabel: "之後", displayType: 'secondary' });
+                        }
+                    }
+                } else if (allMeetings.length > 0) {
+                    itemsToShow.push({ ...allMeetings[allMeetings.length-1], statusLabel: "上次", displayType: 'secondary' });
+                }
+
+                const upcomingEvents = customEvents
+                    .map(e => ({ ...e, dateObj: new Date(`${e.date}T${e.time}`), type: 'custom' }))
+                    .filter(e => {
+                        const endOfDay = new Date(e.dateObj);
+                        endOfDay.setHours(23, 59, 59, 999);
+                        return endOfDay.getTime() > now.getTime() && endOfDay.getTime() < nextWeekEnd.getTime();
+                    })
+                    .map(e => {
+                        const isEventToday = now.toDateString() === e.dateObj.toDateString();
+                        const isEventInWeek = e.dateObj >= currentWeekStart && e.dateObj < currentWeekEnd;
+                        e.statusLabel = isEventToday ? "今天活動" : (isEventInWeek ? "本週活動" : "下週活動");
+                        e.displayType = 'event';
+                        return e;
+                    });
+
+                const combined = [...itemsToShow, ...upcomingEvents];
+                combined.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
+                
+                return combined;
+            }, [parsedData, customEvents]);
+
+            const groupedData = useMemo(() => {
+                const events = customEvents.map(e => ({ ...e, dateObj: new Date(`${e.date}T${e.time}`), type: 'custom' }));
+                const combined = [...parsedData, ...events].sort((a, b) => b.dateObj - a.dateObj);
+                const groups = {};
+                
+                const adminMap = {};
+                if(rawData) {
+                    rawData.forEach(m => {
+                        const [y, mo] = m.year_month.split('_');
+                        const key = `${Number(y)}年 ${Number(mo)}月`;
+                        adminMap[key] = m.journal_admin;
+                    });
+                }
+
+                combined.forEach(item => {
+                    let y, m;
+                    if (item.type === 'meeting' && item.year_month) {
+                        const parts = item.year_month.split('_');
+                        y = Number(parts[0]);
+                        m = Number(parts[1]);
+                    } else {
+                        y = item.dateObj.getFullYear();
+                        m = item.dateObj.getMonth() + 1;
+                    }
+                    
+                    const key = `${y}年 ${m}月`;
+                    if (!groups[key]) groups[key] = { items: [], admin: adminMap[key] || "" };
+                    groups[key].items.push(item);
+                });
+                return groups;
+            }, [parsedData, customEvents, rawData]);
+
+            const handleSaveEvent = (eventData) => {
+                let updated;
+                const existingIndex = customEvents.findIndex(e => e.id === eventData.id);
+                if (existingIndex >= 0) { updated = [...customEvents]; updated[existingIndex] = eventData; } 
+                else { updated = [...customEvents, eventData]; }
+                setCustomEvents(updated);
+                localStorage.setItem(CACHE_KEY_CUSTOM_EVENTS, JSON.stringify(updated));
+            };
+
+            const handleDeleteEvent = (id) => {
+                const updated = customEvents.filter(e => e.id !== id);
+                setCustomEvents(updated);
+                localStorage.setItem(CACHE_KEY_CUSTOM_EVENTS, JSON.stringify(updated));
+            };
+            
+            const handleSaveMeetingOverride = (id, overrideData) => {
+                const updated = { ...meetingOverrides, [id]: overrideData };
+                setMeetingOverrides(updated);
+                localStorage.setItem(CACHE_KEY_OVERRIDES, JSON.stringify(updated));
+            };
+
+            const handleResetMeetingOverride = (id) => {
+                const updated = { ...meetingOverrides };
+                delete updated[id];
+                setMeetingOverrides(updated);
+                localStorage.setItem(CACHE_KEY_OVERRIDES, JSON.stringify(updated));
+            };
+            
+            const handleFilter = (val) => { 
+                setFilterLimit(val); 
+                localStorage.setItem(CACHE_KEY_FILTER, val);
+                fetchData(val); 
+            };
+            
+            const openAddModal = () => { setEditingItem(null); setEventModalOpen(true); };
+            
+            const handleItemClick = (item) => {
+                setEditingItem(item);
+                if (item.type === 'custom') {
+                    setEventModalOpen(true);
+                } else if (item.type === 'meeting') {
+                    setMeetingModalOpen(true);
+                }
+            };
+
+            if (!isOnboarded) return <Onboarding onComplete={(d) => {
+                setSettings({...settings, ...d});
+                localStorage.setItem(CACHE_KEY_SETTINGS, JSON.stringify({...settings, ...d}));
+                setIsOnboarded(true);
+            }} />;
+
+            return (
+                <div className="min-h-screen pb-24 safe-pb relative">
+                    <header className="bg-white px-4 py-3 sticky top-0 z-50 shadow-sm flex justify-between items-center overflow-hidden">
+                        <div className="flex items-center gap-3 min-w-0">
+                            {/* Logo 在所有螢幕都會顯示，並且再稍微放大 */}
+                            <img src="assets/CSBM_logo.png" alt="CSBM Logo" className="h-10 sm:h-11 w-auto object-contain flex-shrink-0" />
+                            {/* 標題在手機螢幕 (sm 以下) 會自動隱藏，把空間讓給 Logo */}
+                            <h1 className="hidden sm:block text-xl font-extrabold text-slate-800 tracking-tight whitespace-nowrap truncate">Meeting Rotation</h1>
+                        </div>
+                        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+                            <a href={GOOGLE_SHEET_URL} target="_blank" className="p-2 rounded-full text-green-600 hover:bg-green-50 transition">{SVGIcons.Sheet}</a>
+                            <button onClick={() => fetchData()} disabled={loading.status === 'fetching'} className={`p-2 rounded-full text-gray-600 hover:bg-gray-100 transition ${loading.status === 'fetching' ? 'loader-spin text-blue-500' : ''}`}>{SVGIcons.Refresh}</button>
+                            <button onClick={() => setShowSettings(true)} className="p-2 rounded-full text-gray-600 hover:bg-gray-100 transition">{SVGIcons.Settings}</button>
+                        </div>
+                    </header>
+                    
+                    {loading.msg && <div className={`text-white text-xs text-center py-1 px-4 transition-all ${loading.status === 'error' ? 'bg-red-500' : 'bg-blue-500'}`}>{loading.msg}</div>}
+                    
+                    <main className="px-4 pt-6">
+                        <section className="mb-8">
+                            <h2 className="text-sm font-bold text-gray-400 mb-3 uppercase tracking-wider">即將到來</h2>
+                            {dashboardItems.length > 0 ? (
+                                <div className="flex flex-col gap-3">
+                                    {dashboardItems.map(item => {
+                                        if (item.displayType === 'hero') {
+                                            const isToday = item.dateObj.toDateString() === new Date().toDateString();
+                                            const isJournal = item.topic && /journal/i.test(item.topic);
+                                            return (
+                                                <div key={item.id} className="p-5 rounded-2xl bg-white text-gray-800 card-shadow border-l-8 border-blue-500 glow-hero relative z-10">
+                                                    <div className="flex justify-between items-start">
+                                                        <div className="text-sm opacity-80 uppercase tracking-wider font-semibold mb-1">{item.statusLabel}</div>
+                                                        <div className="text-right flex flex-col items-end">
+                                                            <div className="text-sm text-gray-600 font-medium mb-0.5">
+                                                                {item.dateObj.toLocaleDateString('zh-TW', {month:'numeric', day:'numeric', weekday:'short'})}
+                                                            </div>
+                                                            <div className="text-xs text-gray-400 font-bold font-mono">
+                                                                {item.dateObj.toLocaleTimeString('zh-TW', {hour: '2-digit', minute: '2-digit', hour12: true})}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-2xl font-bold mb-1 truncate flex items-center gap-2 mt-2">
+                                                        {item.isSpecial ? item.topic : (item.speaker || "未定")}
+                                                    </div>
+                                                    <div className="text-gray-600 mt-1 flex items-center gap-1">
+                                                        {item.isSpecial ? "" : (<span>{item.topic} {item.inferred && "*"}</span>)}
+                                                        {item.isEdited && <span className="bg-blue-100 text-blue-600 text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wide ml-2 flex items-center gap-1">{SVGIcons.Edit} 已編輯</span>}
+                                                    </div>
+                                                    
+                                                    {(isToday || isJournal) && (
+                                                        <div className="mt-4 flex flex-wrap gap-2">
+                                                            {isToday && (
+                                                                <a href="https://meet.google.com/ugv-oiic-xah" target="_blank" className="flex items-center gap-1.5 bg-green-100 text-green-700 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-green-200 transition">
+                                                                    {SVGIcons.Video} Google Meet
+                                                                </a>
+                                                            )}
+                                                            {isJournal && (
+                                                                <a href="https://drive.google.com/drive/folders/17mJ0HwCT1Ehs30Snrfc12MBb8iWbZVj6?usp=drive_link" target="_blank" className="flex items-center gap-1.5 bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-blue-200 transition">
+                                                                    {SVGIcons.Folder} Journal List
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        } else if (item.displayType === 'secondary') {
+                                            return (
+                                                <div key={item.id} className="opacity-95 scale-[0.98] origin-top relative z-10">
+                                                    <div className="p-4 rounded-xl bg-gray-100 text-gray-600 border border-gray-200">
+                                                        <div className="flex justify-between items-start">
+                                                            <span className="text-xs uppercase font-bold text-gray-500 bg-white px-2 py-0.5 rounded-md shadow-sm border border-gray-100">{item.statusLabel}</span>
+                                                            <div className="text-right flex flex-col items-end">
+                                                                <span className="text-xs text-gray-500 font-medium mb-0.5">
+                                                                    {item.dateObj.toLocaleDateString('zh-TW', {month:'numeric', day:'numeric', weekday:'short'})}
+                                                                </span>
+                                                                <div className="text-xs font-bold font-mono text-gray-400">
+                                                                    {item.dateObj.toLocaleTimeString('zh-TW', {hour: '2-digit', minute: '2-digit', hour12: true})}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="font-bold mt-2 flex items-center gap-1">
+                                                            {item.speaker || item.topic}
+                                                            {item.isEdited && <span className="text-blue-500">{SVGIcons.Edit}</span>}
+                                                        </div>
+                                                        {!item.isSpecial && <div className="text-xs text-gray-500 mt-1">{item.topic}</div>}
+                                                    </div>
+                                                </div>
+                                            );
+                                        } else if (item.displayType === 'event') {
+                                            return <UpcomingEventCard key={item.id} event={item} />;
+                                        }
+                                        return null;
+                                    })}
+                                </div>
+                            ) : (<div className="p-6 text-center text-gray-500 bg-white rounded-xl">尚無資料</div>)}
+                        </section>
+                        <section>
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Meeting Rotation</h2>
+                            </div>
+                            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 no-scrollbar">
+                                {[3, 6, 12, 'all'].map(limit => (
+                                    <button key={limit} onClick={() => handleFilter(limit)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${filterLimit === limit ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-500 border border-gray-200'}`}>{limit === 'all' ? '全部' : limit === 12 ? '1 年' : `${limit} 個月`}</button>
+                                ))}
+                            </div>
+                            <div className="space-y-6">
+                                {Object.keys(groupedData).length > 0 ? (
+                                    Object.entries(groupedData).map(([month, group]) => (
+                                        <div key={month}>
+                                            <div className="sticky top-[64px] sm:top-[72px] bg-[#f3f4f6] py-2 z-30 flex justify-between items-center border-l-2 border-gray-300 pl-2">
+                                                <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">
+                                                    {month}
+                                                </h3>
+                                                {group.admin && (
+                                                    <div className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${group.admin.includes(settings.name) ? 'bg-amber-100 text-amber-700 font-bold border border-amber-200' : 'bg-gray-200 text-gray-500'}`}>
+                                                        {SVGIcons.User}
+                                                        <span>Journal : {group.admin}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mt-2 relative z-10">
+                                                {group.items.map(item => {
+                                                    const dashboardMatch = dashboardItems.find(d => d.id === item.id && d.type === item.type);
+                                                    const isNext = dashboardMatch && dashboardMatch.displayType === 'hero';
+                                                    const statusLabel = dashboardMatch ? dashboardMatch.statusLabel : null;
+                                                    
+                                                    return (
+                                                        <ListRow 
+                                                            key={item.id} 
+                                                            item={item} 
+                                                            isNext={isNext} 
+                                                            statusLabel={statusLabel}
+                                                            onEditClick={handleItemClick} 
+                                                        />
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (<div className="p-8 text-center text-gray-400">尚無資料</div>)}
+                            </div>
+                            <div className="mt-8 text-center pb-8">
+                                <p className="text-xs text-gray-400">註：*代表系統根據規則自動推測會議內容，可能與實際排程有誤。<br/><br/>Developed by Angus © CSBM Lab 2026</p>
+                            </div>
+                        </section>
+                    </main>
+                    <button onClick={openAddModal} className="fixed bottom-6 right-6 bg-blue-600 text-white p-4 rounded-full fab-shadow hover:bg-blue-700 active:scale-95 transition z-40">{SVGIcons.Plus}</button>
+                    
+                    {/* Modals */}
+                    <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} settings={settings} onSave={(s)=>{setSettings(s); localStorage.setItem(CACHE_KEY_SETTINGS, JSON.stringify(s));}} onClearCache={()=>{localStorage.removeItem(CACHE_KEY_DATA); localStorage.removeItem(CACHE_KEY_OVERRIDES); setRawData(null); setMeetingOverrides({}); fetchData();}} />
+                    <EventModal isOpen={eventModalOpen} onClose={() => setEventModalOpen(false)} onSave={handleSaveEvent} onDelete={handleDeleteEvent} initialData={editingItem} />
+                    <MeetingEditModal isOpen={meetingModalOpen} onClose={() => setMeetingModalOpen(false)} onSave={handleSaveMeetingOverride} onReset={handleResetMeetingOverride} initialData={editingItem} />
+                </div>
+            );
+        };
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
