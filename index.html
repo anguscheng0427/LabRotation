@@ -254,6 +254,7 @@
                             <h2 className="text-xl font-bold">{initialData ? '編輯活動' : '新增活動'}</h2>
                             <button onClick={onClose} className="text-gray-500 p-2">✕</button>
                         </div>
+                        <p className="text-xs text-gray-500 mb-4">新增的活動僅會儲存在您的設備上，若要新增 Meeting Rotation 請前往 <a href={GOOGLE_SHEET_URL} target="_blank" className="text-blue-600 underline">Google Sheet</a>。</p>
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div><label className="block text-xs text-gray-500 mb-1">活動名稱</label><input required className="w-full p-2 border rounded" value={title} onChange={e => setTitle(e.target.value)} placeholder="例：MOPM 多體學與精準醫學聯合會議" /></div>
                             <div className="grid grid-cols-2 gap-3">
